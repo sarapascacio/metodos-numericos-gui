@@ -1,0 +1,308 @@
+import tkinter as tk
+from tkinter import ttk, messagebox
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from sympy import symbols, lambdify, sympify, diff
+
+def evaluar_funcion(func_str, x_val):
+    x = symbols('x')
+    try:
+        func_str = func_str.replace("^", "**")
+        func = sympify(func_str)
+        f = lambdify(x, func, 'numpy')
+        return f(x_val)
+    except Exception as e:
+        messagebox.showerror("Error", f"Función inválida: {str(e)}")
+        return None
+
+def calcular_derivada(func_str):
+    x = symbols('x')
+    try:
+        func_str = func_str.replace("^", "**")
+        func = sympify(func_str)
+        derivada = diff(func, x)
+        return str(derivada)
+    except Exception as e:
+        messagebox.showerror("Error", f"No se pudo calcular la derivada: {str(e)}")
+        return None
+
+def metodo_biseccion(func_str, a, b, tol, max_iter):
+    fa = evaluar_funcion(func_str, a)
+    fb = evaluar_funcion(func_str, b)
+    
+    if fa is None or fb is None:
+        return []
+        
+    if fa * fb >= 0:
+        messagebox.showwarning("Advertencia", "f(a) y f(b) deben tener signos opuestos.")
+        return []
+    
+    datos = []
+    for i in range(max_iter):
+        c = (a + b) / 2.0
+        fc = evaluar_funcion(func_str, c)
+        if fc is None:
+            return []
+            
+        datos.append([i+1, c, fc])
+        if abs(fc) < tol or (b - a) / 2.0 < tol:
+            break
+        elif fa * fc < 0:
+            b = c
+            fb = fc
+        else:
+            a = c
+            fa = fc
+    return datos
+
+def metodo_falsa_posicion(func_str, a, b, tol, max_iter):
+    fa = evaluar_funcion(func_str, a)
+    fb = evaluar_funcion(func_str, b)
+    
+    if fa is None or fb is None:
+        return []
+        
+    if fa * fb >= 0:
+        messagebox.showwarning("Advertencia", "f(a) y f(b) deben tener signos opuestos.")
+        return []
+    
+    datos = []
+    for i in range(max_iter):
+        c = (a * fb - b * fa) / (fb - fa)
+        fc = evaluar_funcion(func_str, c)
+        if fc is None:
+            return []
+            
+        datos.append([i+1, c, fc])
+        if abs(fc) < tol:
+            break
+        elif fa * fc < 0:
+            b = c
+            fb = fc
+        else:
+            a = c
+            fa = fc
+    return datos
+
+def metodo_newton_raphson(func_str, x0, tol, max_iter):
+    deriv_str = calcular_derivada(func_str)
+    if deriv_str is None:
+        return []
+    
+    f = lambda x: evaluar_funcion(func_str, x)
+    df = lambda x: evaluar_funcion(deriv_str, x)
+    
+    if df(x0) == 0:
+        messagebox.showwarning("Advertencia", "f'(x0) no puede ser cero.")
+        return []
+    
+    datos = []
+    for i in range(max_iter):
+        try:
+            x1 = x0 - f(x0) / df(x0)
+            fx1 = f(x1)
+            datos.append([i+1, x1, fx1])
+            if abs(fx1) < tol:
+                break
+            x0 = x1
+        except Exception as e:
+            messagebox.showerror("Error", f"Error en iteración {i+1}: {str(e)}")
+            return datos
+    return datos
+
+def calcular():
+    # Limpiar resultados anteriores
+    entry_derivada.config(state='normal')
+    entry_derivada.delete(0, tk.END)
+    entry_derivada.config(state='readonly')
+    
+    for row in tabla.get_children():
+        tabla.delete(row)
+        
+    for widget in frame_grafica.winfo_children():
+        widget.destroy()
+
+    try:
+        metodo = combo_metodo.get()
+        func_str = entry_funcion.get().strip()
+        
+        if not func_str:
+            messagebox.showwarning("Advertencia", "Debe ingresar una función")
+            return
+            
+        try:
+            tol = float(entry_tol.get())
+            max_iter = int(entry_max_iter.get())
+        except ValueError:
+            messagebox.showerror("Error", "Tolerancia e iteraciones deben ser números válidos")
+            return
+
+        if metodo in ["Bisección", "Falsa Posición"]:
+            try:
+                a = float(entry_a.get())
+                b = float(entry_b.get())
+            except ValueError:
+                messagebox.showerror("Error", "Los valores a y b deben ser números válidos")
+                return
+                
+            if metodo == "Bisección":
+                resultados = metodo_biseccion(func_str, a, b, tol, max_iter)
+            else:
+                resultados = metodo_falsa_posicion(func_str, a, b, tol, max_iter)
+                
+        elif metodo == "Newton-Raphson":
+            try:
+                x0 = float(entry_x0.get())
+            except ValueError:
+                messagebox.showerror("Error", "El valor x0 debe ser un número válido")
+                return
+                
+            deriv_str = calcular_derivada(func_str)
+            if deriv_str:
+                entry_derivada.config(state='normal')
+                entry_derivada.insert(0, deriv_str)
+                entry_derivada.config(state='readonly')
+                
+            resultados = metodo_newton_raphson(func_str, x0, tol, max_iter)
+        
+        if resultados:
+            actualizar_tabla(resultados)
+            graficar_funcion(func_str, resultados)
+        
+    except Exception as e:
+        messagebox.showerror("Error", f"Ocurrió un error inesperado: {str(e)}")
+
+def actualizar_campos(*args):
+    metodo = combo_metodo.get()
+    if metodo == "Newton-Raphson":
+        label_a.grid_remove()
+        entry_a.grid_remove()
+        label_b.grid_remove()
+        entry_b.grid_remove()
+        label_x0.grid(row=1, column=0)
+        entry_x0.grid(row=1, column=1)
+    else:
+        label_x0.grid_remove()
+        entry_x0.grid_remove()
+        label_a.grid(row=1, column=0)
+        entry_a.grid(row=1, column=1)
+        label_b.grid(row=1, column=2)
+        entry_b.grid(row=1, column=3)
+
+def actualizar_tabla(resultados):
+    for row in tabla.get_children():
+        tabla.delete(row)
+    for i, c, f_c in resultados:
+        tabla.insert("", "end", values=(i, c, f_c))
+
+def graficar_funcion(func_str, resultados):
+    try:
+        x_vals = []
+        if combo_metodo.get() != "Newton-Raphson":
+            a = float(entry_a.get())
+            b = float(entry_b.get())
+            x_min = min(a, b)
+            x_max = max(a, b)
+        else:
+            x0 = float(entry_x0.get())
+            x_min = x0 - 2
+            x_max = x0 + 2
+        
+        x_vals = np.linspace(x_min, x_max, 400)
+        y_vals = [evaluar_funcion(func_str, x) for x in x_vals]
+        
+        fig, ax = plt.subplots()
+        ax.plot(x_vals, y_vals, label=f"f(x) = {func_str}", color='purple')
+        ax.axhline(0, color='black', linewidth=0.5)
+        ax.axvline(0, color='black', linewidth=0.5)
+        ax.grid(True, linestyle='--', linewidth=0.5)
+        
+        for i, c, f_c in resultados:
+            ax.scatter(c, f_c, color='red')
+            ax.text(c, f_c, f"{i}", fontsize=8)
+        
+        canvas = FigureCanvasTkAgg(fig, master=frame_grafica)
+        canvas.draw()
+        canvas.get_tk_widget().pack()
+    except Exception as e:
+        messagebox.showerror("Error", f"No se pudo graficar: {str(e)}")
+
+# Configuración de la interfaz gráfica
+root = tk.Tk()
+root.title("Métodos Numéricos")
+root.geometry("800x600")
+root.configure(bg='#FADADD')
+
+frame_input = tk.Frame(root, bg='#FADADD')
+frame_input.pack()
+
+def crear_label(texto, fila, columna):
+    return tk.Label(frame_input, text=texto, font=("Aharoni", 10), bg='#D8BFD8').grid(row=fila, column=columna, padx=5, pady=5)
+
+# Selector de método
+crear_label("Método:", 0, 0)
+combo_metodo = ttk.Combobox(frame_input, values=["Bisección", "Falsa Posición", "Newton-Raphson"], state="readonly")
+combo_metodo.grid(row=0, column=1)
+combo_metodo.set("Bisección")
+combo_metodo.bind("<<ComboboxSelected>>", actualizar_campos)
+
+crear_label("Función:", 0, 2)
+entry_funcion = tk.Entry(frame_input, width=20)
+entry_funcion.grid(row=0, column=3)
+
+# Campos para Bisección/Falsa Posición
+label_a = tk.Label(frame_input, text="a:", font=("Aharoni", 10), bg='#D8BFD8')
+label_a.grid(row=1, column=0)
+entry_a = tk.Entry(frame_input, width=10)
+entry_a.grid(row=1, column=1)
+
+label_b = tk.Label(frame_input, text="b:", font=("Aharoni", 10), bg='#D8BFD8')
+label_b.grid(row=1, column=2)
+entry_b = tk.Entry(frame_input, width=10)
+entry_b.grid(row=1, column=3)
+
+# Campos para Newton-Raphson (inicialmente ocultos)
+label_x0 = tk.Label(frame_input, text="x0:", font=("Aharoni", 10), bg='#D8BFD8')
+entry_x0 = tk.Entry(frame_input, width=10)
+
+# Campos comunes
+crear_label("Umbral:", 2, 0)
+entry_tol = tk.Entry(frame_input, width=10)
+entry_tol.grid(row=2, column=1)
+
+crear_label("Max iter:", 2, 2)
+entry_max_iter = tk.Entry(frame_input, width=10)
+entry_max_iter.grid(row=2, column=3)
+
+# Botón
+style = ttk.Style()
+style.configure("TButton", borderwidth=1, relief="solid", width=20, padding=(10, 5))
+boton_calcular = ttk.Button(frame_input, text="Calcular", command=calcular, style="TButton")
+boton_calcular.grid(row=3, columnspan=4, pady=10)
+
+# Frame para mostrar la derivada calculada
+frame_derivada = tk.Frame(root, bg='#FADADD')
+frame_derivada.pack()
+
+label_derivada = tk.Label(frame_derivada, text="Derivada calculada: ", font=("Aharoni", 10), bg='#D8BFD8')
+label_derivada.pack(side=tk.LEFT)
+
+entry_derivada = tk.Entry(frame_derivada, width=30, state='readonly')
+entry_derivada.pack(side=tk.LEFT)
+
+# Resultados y gráfica
+frame_resultados = tk.Frame(root, bg='#FADADD')
+frame_resultados.pack()
+
+columns = ("Iteración", "c", "f(c)")
+tabla = ttk.Treeview(frame_resultados, columns=columns, show="headings")
+for col in columns:
+    tabla.heading(col, text=col)
+    tabla.column(col, width=120)
+tabla.pack()
+
+frame_grafica = tk.Frame(root, bg='#FADADD', width=400, height=300)
+frame_grafica.pack()
+
+root.mainloop()
